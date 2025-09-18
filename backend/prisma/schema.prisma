@@ -6,18 +6,183 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "postgresql" // Ou o provedor de sua escolha
   url      = env("DATABASE_URL")
 }
 
-// Example User model for authentication
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String
-  name      String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                   String   @id @default(cuid())
+  name                 String
+  email                String   @unique
+  password             String
+  whatsappNumber       String?
+  passwordResetToken   String?
+  passwordResetExpires DateTime?
+  createdAt            DateTime @default(now())
 
-  @@map("users")
+  // Relações
+  lobbiesOwned    Lobby[]       @relation("LobbyOwner")
+  schedulesOwned  LobbySchedule[] @relation("ScheduleOwner") // Opcional: Se um admin pode criar schedules para outros
+  signups         Signup[]
+  karmaGiven      Karma[]       @relation("Giver")
+  karmaReceived   Karma[]       @relation("Receiver")
+  comments        Comment[]
+}
+
+model Lobby {
+  id                  String      @id @default(cuid())
+  name                String      // Ex: "Lobby Principal da Comunidade"
+  isPublic            Boolean     @default(true)
+  inviteCode          String?     @unique    // Para lobbies privados
+  discordWebhookUrl   String?     // Para notificações via Discord
+  createdAt           DateTime    @default(now())
+
+  // Relações
+  ownerId             String
+  owner               User        @relation("LobbyOwner", fields: [ownerId], references: [id])
+  schedules           LobbySchedule[]
+  matches             Match[]
+}
+
+model LobbySchedule {
+  id          String      @id @default(cuid())
+  time        String      // Hora da partida, ex: "20:00:00"
+  daysOfWeek  DayOfWeek[] // Dias da semana em que se repete
+  description String?     // Ex: "Mix Diário das 20h"
+
+  // Relações
+  lobbyId        String
+  lobby          Lobby       @relation(fields: [lobbyId], references: [id])
+  ownerId        String
+  owner          User        @relation("ScheduleOwner", fields: [ownerId], references: [id])
+  createdMatches Match[]
+}
+
+
+model Match {
+  id           String      @id @default(cuid())
+  name         String?     // <-- SUA ADIÇÃO! Ex: "Lista Manhã", "Mix da Galera da Tarde"
+  description  String?     // Campo para regras, link do servidor, discord, etc.
+  scheduledAt  DateTime
+  status       MatchStatus @default(SCHEDULED)
+  format       MatchFormat @default(MD1)
+  seriesScore  String?     // Placar da série, ex: "2-1"
+  createdAt    DateTime    @default(now())
+  
+  // Relações
+  lobbyId      String
+  lobby        Lobby       @relation(fields: [lobbyId], references: [id])
+  scheduleId   String?     // Opcional: link para o agendamento que criou esta partida
+  schedule     LobbySchedule? @relation(fields: [scheduleId], references: [id])
+  signups      Signup[]
+  mapResults   MapResult[]
+  comments     Comment[]
+  karmaEvents  Karma[]
+}
+
+// ===============================================
+// Modelos de Suporte e Relações
+// ===============================================
+
+model Signup {
+  id        String    @id @default(cuid())
+  status    Status    // TITULAR ou SUPLENTE
+  team      Team?     // A ou B, definido pelo admin do lobby
+  createdAt DateTime  @default(now())
+
+  // Relações
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  matchId   String
+  match     Match     @relation(fields: [matchId], references: [id])
+
+  @@unique([userId, matchId]) // Um usuário só pode se inscrever uma vez por partida
+}
+
+model Map {
+  id        String      @id @default(cuid())
+  name      String      @unique // Ex: "Mirage", "Inferno"
+  imageUrl  String?     // URL para a imagem do mapa
+
+  // Relações
+  results   MapResult[]
+}
+
+model MapResult {
+  id          String @id @default(cuid())
+  teamAScore  Int
+  teamBScore  Int
+  order       Int    // Ordem do mapa na série (1, 2, 3...)
+
+  // Relações
+  matchId     String
+  match       Match  @relation(fields: [matchId], references: [id])
+  mapId       String
+  map         Map    @relation(fields: [mapId], references: [id])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  // Relações
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id])
+}
+
+model Karma {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+
+  // Relações
+  giverId    String
+  giver      User     @relation("Giver", fields: [giverId], references: [id])
+  receiverId String
+  receiver   User     @relation("Receiver", fields: [receiverId], references: [id])
+  matchId    String
+  match      Match    @relation(fields: [matchId], references: [id])
+
+  @@unique([giverId, receiverId, matchId]) // Um jogador só pode dar karma uma vez por partida para outro
+}
+
+
+// ===============================================
+// Enums (Tipos de Dados Customizados)
+// ===============================================
+
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+enum MatchStatus {
+  SCHEDULED // Agendada e aberta para inscrições
+  LIVE      // Em andamento
+  FINISHED  // Finalizada
+  CANCELED  // Cancelada
+}
+
+enum MatchFormat {
+  MD1
+  MD3
+  MD5
+  MD10
+}
+
+enum Status {
+  TITULAR
+  SUPLENTE
+}
+
+enum Team {
+  A
+  B
 }

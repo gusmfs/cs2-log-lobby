@@ -1,5 +1,4 @@
 // Global type definitions for the application
-
 export interface User {
   id: number;
   email: string;
